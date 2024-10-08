@@ -3,9 +3,20 @@
 
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
 from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, START_TOKEN
 
+
+# 레이블 결정 함수
+def determine_label(user_input):
+    # 입력된 질문을 바탕으로 레이블을 결정합니다
+    if any(keyword in user_input for keyword in ["슬퍼", "힘들어", "눈물", "이별", "망쳤어"]):
+        return "1"  # 이별(부정)
+    elif any(keyword in user_input for keyword in ["사랑", "고백", "행복", "좋아"]):
+        return "2"  # 사랑(긍정)
+    else:
+        return "0"  # 일상다반사
+    
+    
 # GPU 설정
 # 모델을 GPU에 올려서 연산 속도를 향상시킵니다.
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -21,16 +32,6 @@ model.to(device)
 if tokenizer.pad_token is None:
     tokenizer.add_special_tokens({'pad_token': PAD_TOKEN})
     model.resize_token_embeddings(len(tokenizer))
-
-# 레이블 결정 함수
-def determine_label(user_input):
-    # 입력된 질문을 바탕으로 레이블을 결정합니다
-    if any(keyword in user_input for keyword in ["슬퍼", "힘들어", "눈물", "이별", "망쳤어"]):
-        return "1"  # 이별(부정)
-    elif any(keyword in user_input for keyword in ["사랑", "고백", "행복", "좋아"]):
-        return "2"  # 사랑(긍정)
-    else:
-        return "0"  # 일상다반사
 
 # 챗봇 대화 루프
 # 사용자의 입력을 받아 모델이 응답을 생성합니다.
