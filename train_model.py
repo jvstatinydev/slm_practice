@@ -1,4 +1,3 @@
-import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import TextDataset, DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments
