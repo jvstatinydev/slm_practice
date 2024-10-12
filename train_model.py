@@ -5,12 +5,19 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import TextDataset, DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments
 
-from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT
+from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT, END_TOKEN, START_TOKEN
 
 # 1. 토크나이저 및 모델 불러오기
 # 사전 학습된 KoGPT2 모델과 토크나이저를 불러옵니다.
 tokenizer = AutoTokenizer.from_pretrained("skt/kogpt2-base-v2")
 model = AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2")
+
+# 커스텀 토큰 목록 추가
+new_tokens = [START_TOKEN, END_TOKEN]
+num_added_tokens = tokenizer.add_tokens(new_tokens)
+
+# 모델의 임베딩 레이어를 새로 추가된 토큰에 맞게 확장
+model.resize_token_embeddings(len(tokenizer))
 
 # 2. 데이터셋 로드
 # 학습에 사용할 데이터를 로드하고 토큰화합니다.
