@@ -4,24 +4,19 @@
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import TextDataset, DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments
-
 from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT, END_TOKEN, START_TOKEN
 
-# 1. 토크나이저 및 모델 불러오기
-# 사전 학습된 KoGPT2 모델과 토크나이저를 불러옵니다.
-tokenizer = AutoTokenizer.from_pretrained("skt/kogpt2-base-v2")
-model = AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2")
+def load_tokenizer_and_model():
+    """토크나이저와 모델을 불러오고, 커스텀 토큰을 추가합니다."""
+    tokenizer = AutoTokenizer.from_pretrained("skt/kogpt2-base-v2")
+    model = AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2")
+    new_tokens = [START_TOKEN, END_TOKEN]
+    tokenizer.add_tokens(new_tokens)
+    model.resize_token_embeddings(len(tokenizer))
+    return tokenizer, model
 
-# 커스텀 토큰 목록 추가
-new_tokens = [START_TOKEN, END_TOKEN]
-num_added_tokens = tokenizer.add_tokens(new_tokens)
-
-# 모델의 임베딩 레이어를 새로 추가된 토큰에 맞게 확장
-model.resize_token_embeddings(len(tokenizer))
-
-# 2. 데이터셋 로드
-# 학습에 사용할 데이터를 로드하고 토큰화합니다.
 def load_dataset(file_path, tokenizer):
+    """데이터셋을 불러오고 토큰화합니다."""
     return TextDataset(
         tokenizer=tokenizer,
         file_path=file_path,
@@ -29,35 +24,42 @@ def load_dataset(file_path, tokenizer):
     )
 
 def get_data_collator(tokenizer):
+    """언어 모델링을 위한 데이터 콜레이터를 가져옵니다."""
     return DataCollatorForLanguageModeling(
         tokenizer=tokenizer, mlm=False,
     )
 
-dataset = load_dataset(TRAIN_TXT, tokenizer)
-data_collator = get_data_collator(tokenizer)
+def train_model(model, tokenizer, dataset, data_collator):
+    """주어진 데이터셋과 데이터 콜레이터로 모델을 학습시킵니다."""
+    training_args = TrainingArguments(
+        output_dir=RESULTS_DIR,
+        overwrite_output_dir=True,
+        num_train_epochs=3,
+        per_device_train_batch_size=4,
+        save_steps=500,
+        save_total_limit=2,
+        prediction_loss_only=True,
+    )
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        data_collator=data_collator,
+        train_dataset=dataset,
+    )
+    trainer.train()
+    return trainer
 
-# 3. 모델 파인튜닝
-# 학습을 위한 설정을 정의하고 Trainer를 이용해 모델을 파인튜닝합니다.
-training_args = TrainingArguments(
-    output_dir=RESULTS_DIR,
-    overwrite_output_dir=True,
-    num_train_epochs=3,
-    per_device_train_batch_size=4,
-    save_steps=500,
-    save_total_limit=2,
-    prediction_loss_only=True,
-)
+def save_model(trainer, tokenizer):
+    """파인튜닝된 모델과 토크나이저를 저장합니다."""
+    trainer.save_model(MODEL_DIR)
+    tokenizer.save_pretrained(MODEL_DIR)
 
-trainer = Trainer(
-    model=model,
-    args=training_args,
-    data_collator=data_collator,
-    train_dataset=dataset,
-)
+def main():
+    tokenizer, model = load_tokenizer_and_model()
+    dataset = load_dataset(TRAIN_TXT, tokenizer)
+    data_collator = get_data_collator(tokenizer)
+    trainer = train_model(model, tokenizer, dataset, data_collator)
+    save_model(trainer, tokenizer)
 
-trainer.train()
-
-# 4. 파인튜닝된 모델 저장
-# 파인튜닝된 모델과 토크나이저를 저장합니다.
-trainer.save_model(MODEL_DIR)
-tokenizer.save_pretrained(MODEL_DIR)
+if __name__ == "__main__":
+    main()
