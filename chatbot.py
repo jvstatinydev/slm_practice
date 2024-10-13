@@ -27,10 +27,10 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
 model = AutoModelForCausalLM.from_pretrained(MODEL_DIR)
 model.to(device)
 
-# 토크나이저에 pad_token 추가
-# 모델 학습 시 필요한 pad_token이 설정되지 않았을 경우 추가합니다.
-if tokenizer.pad_token is None:
-    tokenizer.add_special_tokens({'pad_token': PAD_TOKEN})
+# 모델 학습 시 필요한 토큰이 설정되지 않았을 경우 추가합니다.
+# 토크나이저에 pad_token과 eos_token 추가
+if tokenizer.pad_token is None or tokenizer.eos_token is None:
+    tokenizer.add_special_tokens({'pad_token': PAD_TOKEN, 'eos_token': END_TOKEN})
     model.resize_token_embeddings(len(tokenizer))
 
 # 챗봇 대화 루프
