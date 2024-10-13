@@ -1,0 +1,6 @@
+{
+    "batch_size": 2,
+    "num_train_epochs": 3,
+    "learning_rate": 2.753447390627725e-05,
+    "block_size": 128
+}
