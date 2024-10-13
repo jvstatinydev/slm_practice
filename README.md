@@ -7,8 +7,13 @@
 python 버전 3.12
 
 필요 패키지 설치
+- Mac
    ```
-   pip install -r requirements.txt
+   pip install -r requirements_mac.txt
+   ```
+- Windows
+   ```
+   pip install -r requirements_windows.txt
    ```
 
 ## 사용방법
