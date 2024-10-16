@@ -2,11 +2,12 @@
 # 이 파일은 LLMOps 파이프라인에서 모델을 파인튜닝하는 과정을 구현합니다.
 
 import json
+import os
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from transformers import TextDataset, DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments, TrainerCallback
 import optuna
-from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT, END_TOKEN, START_TOKEN, TRAIN_PARAMETER_JSON
+from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT, END_TOKEN, START_TOKEN, TRAIN_PARAMETER_JSON, DEFAULT_TRAIN_PARAMETER_JSON
 import torch
 from torch.utils.data import random_split
 
@@ -48,6 +49,9 @@ def get_data_collator(tokenizer):
 
 def load_hyperparameters(file_path):
     """최적의 하이퍼파라미터를 JSON 파일에서 불러옵니다."""
+    if not os.path.exists(file_path):
+        file_path = DEFAULT_TRAIN_PARAMETER_JSON
+    
     with open(file_path, 'r') as f:
         return json.load(f)
 
