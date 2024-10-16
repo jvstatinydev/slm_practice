@@ -25,7 +25,7 @@ python 버전 3.12
    ```
 2. **모델 훈련 파라미터 튜닝 (hyperparameter)**
 
-   (train_parameter.json 의 기본값이 적합하지 않은 경우에 사용)
+   (default_train_parameter.json 의 기본값이 적합하지 않은 경우에 사용)
 
    ```sh
    python hyperparameter_tuning.py
