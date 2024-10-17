@@ -70,8 +70,8 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
     # 데이터셋을 학습 및 검증 데이터로 분할
     # 튜닝 시에만 데이터셋의 일부를 샘플링 (trial이 있을 때)
     if trial is not None:
-        print("Optuna 튜닝 중: 데이터셋 10% 샘플링")
-        subset_size = int(len(dataset) * 0.1)  # 데이터의 10%만 사용
+        print("Optuna 튜닝 중: 데이터셋 5% 샘플링")
+        subset_size = int(len(dataset) * 0.05)  # 데이터의 5%만 사용
         valid_length = int(subset_size * 0.1)  # 그 중 10%를 검증 데이터로 사용
         train_length = subset_size - valid_length
         # 전체 데이터셋에서 10%만 샘플링하여 train/valid로 나누기
