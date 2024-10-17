@@ -23,12 +23,19 @@ python 버전 3.12
    ```sh
    python prepare_data.py
    ```
-2. **모델 훈련 (train)**
+2. **모델 훈련 파라미터 튜닝 (hyperparameter)**
+
+   (default_train_parameter.json 의 기본값이 적합하지 않은 경우에 사용)
+
+   ```sh
+   python hyperparameter_tuning.py
+   ```
+3. **모델 훈련 (train)**
 
    ```sh
    python train_model.py
    ```
-3. **챗봇 실행 (chat)**
+4. **챗봇 실행 (chat)**
 
    ```sh
    python chatbot.py
