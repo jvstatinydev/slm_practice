@@ -1,0 +1,26 @@
+python {PROJECT_PATH}/hyperparameter_tuning.py
+# 실행시 아래와 같은 출력
+# warning 메세지는 제거함
+[I 2024-10-16 15:01:46,987] A new study created in memory with name: no-name-08f2ea6c-e292-4a3e-a5dd-5bdea24b9641
+GPU 사용 불가: CPU로 학습합니다.
+Optuna 튜닝 중: 데이터셋 10% 샘플링
+{'loss': 1.0508, 'grad_norm': 5.251997470855713, 'learning_rate': 2.3081188653980697e-05, 'epoch': 3.12}   
+{'eval_loss': 1.6665831804275513, 'eval_runtime': 1.027, 'eval_samples_per_second': 34.078, 'eval_steps_per_second': 4.868, 'epoch': 3.12}                                                                            
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████| 960/960 [04:09<00:00,  4.04it/s]There were missing keys in the checkpoint model loaded: ['lm_head.weight'].                                
+{'train_runtime': 251.7883, 'train_samples_per_second': 7.625, 'train_steps_per_second': 3.813, 'train_loss': 0.6921564737955729, 'epoch': 6.0}
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████| 960/960 [04:11<00:00,  3.81it/s]
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 5/5 [00:00<00:00,  5.52it/s]
+[I 2024-10-16 15:06:04,102] Trial 0 finished with value: 1.6665831804275513 and parameters: {'batch_size': 2, 'num_train_epochs': 6, 'learning_rate': 4.8169437190916233e-05, 'block_size': 128}. Best is trial 0 with value: 1.6665831804275513.
+GPU 사용 불가: CPU로 학습합니다.
+Optuna 튜닝 중: 데이터셋 10% 샘플링
+{'loss': 0.2963, 'grad_norm': 5.919269561767578, 'learning_rate': 3.659848094495177e-06, 'epoch': 8.44}                                   
+{'eval_loss': 2.443040370941162, 'eval_runtime': 0.486, 'eval_samples_per_second': 106.988, 'eval_steps_per_second': 14.402, 'epoch': 8.44}                                                                                                                                         
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 2370/2370 [08:13<00:00,  4.97it/s]There were missing keys in the checkpoint model loaded: ['lm_head.weight'].                                                               
+{'train_runtime': 495.9994, 'train_samples_per_second': 9.556, 'train_steps_per_second': 4.778, 'train_loss': 0.7621196151282716, 'epoch': 10.0}
+100%|█████████████████████████████████████████████████████████████████████████████████████████████████| 2370/2370 [08:15<00:00,  4.78it/s]
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████| 7/7 [00:00<00:00, 14.71it/s]
+[I 2024-10-16 15:14:25,057] Trial 1 finished with value: 2.1966779232025146 and parameters: {'batch_size': 2, 'num_train_epochs': 10, 'learning_rate': 2.344281076744208e-05, 'block_size': 64}. Best is trial 0 with value: 1.6665831804275513.
+
+# ... 위와 같이 로그를 남기며 N번의 튜닝 진행 후 최적의 파라미터를 세팅 ...
+
+최적의 파라미터: {'batch_size': 4, 'num_train_epochs': 7, 'learning_rate': 1.1152158523483639e-05, 'block_size': 128}

@@ -5,6 +5,8 @@ RESULTS_DIR = f"{BASE_DIR}/results"
 
 DATA_CSV = f"{DATA_DIR}/data.csv"
 TRAIN_TXT = f"{DATA_DIR}/train.txt"
+TRAIN_PARAMETER_JSON = f"{BASE_DIR}/train_parameter.json"
+DEFAULT_TRAIN_PARAMETER_JSON = f"{BASE_DIR}/default_train_parameter.json"
 
 START_TOKEN = f"<|startoftext|>"
 END_TOKEN = f"<|endoftext|>"

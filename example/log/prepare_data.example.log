@@ -1,0 +1,2 @@
+python3 {PROJECT_PATH}/prepare_data.py
+# 교육자료가 다운로드 됨
