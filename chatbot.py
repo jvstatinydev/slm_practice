@@ -4,20 +4,132 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from torch.nn import CrossEntropyLoss
-from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, START_TOKEN
+from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, START_TOKEN, RESULTS_DIR
 import os
-import matplotlib.pyplot as plt
+import chainlit as cl
+import chainlit.data as cl_data
+from chainlit.user import PersistedUser, User
+from chainlit.element import Element, ElementDict
+from chainlit.step import StepDict
+from chainlit.types import (
+    Feedback,
+    PaginatedResponse,
+    Pagination,
+    ThreadDict,
+    ThreadFilter,
+)
+import json
+from typing import Optional, Dict, List
+
+# 전역 변수 선언
+chat_history = []
+sentiment_analyzer = None
+device = None
+tokenizer = None
+model = None
+optimizer = None
+criterion = None
+
+
+# **Custom Data Layer 정의**
+class CustomDataLayer(cl_data.BaseDataLayer):
+
+    async def upsert_feedback(self, feedback: Feedback) -> str:
+        filename = f"{RESULTS_DIR}/results.json"
+        with open(filename, "r", encoding="utf-8") as file:
+            try:
+                existing_data = json.load(file)
+            except json.JSONDecodeError:
+                existing_data = []
+        for i, data in enumerate(existing_data):
+            try:
+                if data['parent_id'] == feedback.forId:
+                    existing_data[i]['feedback'] = {
+                        "value": feedback.value,
+                        "comment": feedback.comment,
+                    }
+                    if feedback.value == 0:
+                        existing_data[i]['feedback']['score'] = -1
+                    else:
+                        existing_data[i]['feedback']['score'] = 1
+            except KeyError:
+                pass
+        with open(filename, "w", encoding="utf-8") as file:
+            json.dump(existing_data, file, indent=4)
+        return feedback.forId
+
+    async def get_user(self, identifier: str) -> Optional["PersistedUser"]:
+        pass
+
+    async def create_user(self, user: "User") -> Optional["PersistedUser"]:
+        pass
+
+    async def delete_feedback(
+        self,
+        feedback_id: str,
+    ) -> bool:
+        pass
+
+    async def create_element(self, element: "Element"):
+        pass
+
+    async def get_element(
+        self, thread_id: str, element_id: str
+    ) -> Optional["ElementDict"]:
+        pass
+
+    async def delete_element(self, element_id: str, thread_id: Optional[str] = None):
+        pass
+
+    async def create_step(self, step_dict: "StepDict"):
+        pass
+
+    async def update_step(self, step_dict: "StepDict"):
+        pass
+
+    async def delete_step(self, step_id: str):
+        pass
+
+    async def get_thread_author(self, thread_id: str) -> str:
+        return ""
+
+    async def delete_thread(self, thread_id: str):
+        pass
+
+    async def list_threads(
+        self, pagination: "Pagination", filters: "ThreadFilter"
+    ) -> "PaginatedResponse[ThreadDict]":
+        pass
+
+    async def get_thread(self, thread_id: str) -> "Optional[ThreadDict]":
+        pass
+
+    async def update_thread(
+        self,
+        thread_id: str,
+        name: Optional[str] = None,
+        user_id: Optional[str] = None,
+        metadata: Optional[Dict] = None,
+        tags: Optional[List[str]] = None,
+    ):
+        pass
+
+    async def build_debug_url(self) -> str:
+        pass
+
+# **Custom Data Layer 설정**
+cl_data._data_layer = CustomDataLayer()
+
 
 # 자동 레이블 결정 함수
-def determine_label(_user_input):
+async def determine_label(user_input, sentiment_model):
     # 입력된 질문을 감정 분석하여 레이블을 결정합니다
-    sentiment = sentiment_analyzer(_user_input)[0]
+    sentiment = sentiment_model(user_input)[0]
 
     # 감정 분석 결과 출력
-    print(f"감정: {sentiment['label']}, 점수: {sentiment['score']:.2f}")
-
+    await cl.Message(content=f"SYSTEM: 감정: {sentiment['label']}, 점수: {sentiment['score']:.2f}").send()
     # 감정 레이블에서 idx 추출
-    id2label = sentiment_analyzer.model.config.id2label
+    id2label = sentiment_model.model.config.id2label
     label_key = None
     for key, value in id2label.items():
         if value == sentiment['label']:
@@ -32,126 +144,89 @@ def determine_label(_user_input):
     else:
         return "0"  # 중립 혹은 일상
 
+
 # 응답 다듬기 함수
-def refine_response(_input_ids, _output_ids, _tokenizer):
-    response = _tokenizer.decode(_output_ids[0], skip_special_tokens=False)
+def refine_response(input_ids, output_ids, tokenizer_instance):
+    response = tokenizer_instance.decode(output_ids[0], skip_special_tokens=False)
 
     # 입력 텍스트 길이만큼 잘라서 생성된 응답만 추출
-    _generated_answer = response[len(_tokenizer.decode(_input_ids[0], skip_special_tokens=False)):]
-    _generated_answer = _generated_answer.strip()
+    generated_answer = response[len(tokenizer_instance.decode(input_ids[0], skip_special_tokens=False)):]
+    generated_answer = generated_answer.strip()
 
     # END_TOKEN 토큰이 있을 경우 해당 위치에서 자름
-    if END_TOKEN in _generated_answer:
-        _generated_answer = _generated_answer.split(END_TOKEN)[0].strip()
+    if END_TOKEN in generated_answer:
+        generated_answer = generated_answer.split(END_TOKEN)[0].strip()
 
     # START_TOKEN 토큰이 있을 경우 해당 위치 이전까지만 사용
-    if START_TOKEN in _generated_answer:
-        _generated_answer = _generated_answer.split(START_TOKEN)[0].strip()
+    if START_TOKEN in generated_answer:
+        generated_answer = generated_answer.split(START_TOKEN)[0].strip()
 
     # 불필요한 특수 토큰 제거
     for token in [PAD_TOKEN, END_TOKEN, START_TOKEN]:
-        _generated_answer = _generated_answer.replace(token, '').strip()
+        generated_answer = generated_answer.replace(token, '').strip()
 
     # 빈 응답 처리
-    if len(_generated_answer) == 0 or _generated_answer.isspace():
-        _generated_answer = "죄송해요, 잘 이해하지 못했어요."
+    if len(generated_answer) == 0 or generated_answer.isspace():
+        generated_answer = "죄송해요, 잘 이해하지 못했어요."
 
-    return _generated_answer
+    return generated_answer
 
-# RLHF 보상 함수
-def reward_function(user_feedback):
-    if user_feedback == "1":
-        return 1  # 긍정적인 피드백
-    elif user_feedback == "2":
-        return -1  # 부정적인 피드백
+@cl.on_chat_start
+async def start():
+    global sentiment_analyzer, device, tokenizer, model, optimizer, criterion
+
+    # 감정 분석 파이프라인 생성
+    sentiment_analyzer = pipeline("sentiment-analysis", model="nlp04/korean_sentiment_analysis_kcelectra")
+
+    # 모델을 올릴 device 설정. GPU 또는 CPU 사용. 연산 속도를 향상시킵니다.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 파인튜닝된 모델 로드
+    # 저장된 모델과 토크나이저를 로드합니다.
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_DIR)
+
+    # 모델 학습 시 필요한 토큰 설정 추가
+    if tokenizer.pad_token is None or tokenizer.eos_token is None:
+        tokenizer.add_special_tokens({'pad_token': PAD_TOKEN, 'eos_token': END_TOKEN})
+        model.resize_token_embeddings(len(tokenizer))
+
+    # 모델을 GPU/CPU로 이동
+    model.to(device)
+
+    # 옵티마이저 설정 (RLHF 학습에 사용)
+    learning_rate = 1e-5
+    weight_decay = 1e-5  # 가중치 감쇠를 위한 하이퍼파라미터 설정 (정규화 기법 적용)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+    # 손실 함수 정의
+    criterion = CrossEntropyLoss(reduction='none')  # 개별 샘플의 손실을 계산하기 위해 'none'으로 설정
+
+    # 업데이트된 모델과 옵티마이저 상태 로드 또는 저장
+    if os.path.exists("updated_model.pth"):
+        checkpoint = torch.load("updated_model.pth", weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        await cl.Message(content="SYSTEM: 이전 학습 내용을 로드했습니다.").send()
     else:
-        return 0  # 중립 피드백
+        # 초기 모델과 옵티마이저 상태 저장
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, "updated_model.pth")
 
-# 피드백 수집 및 보상 반영 함수
-def collect_feedback_and_apply_reward(_input_ids, _output_ids, _model, _optimizer, _criterion):
-    user_feedback = input("사용자의 피드백 (1-좋음, 2-별로, 미입력-의견없음): ")
-    reward = reward_function(user_feedback)
+    await cl.Message(content="안녕?").send()
 
-    # RLHF 학습을 위한 파라미터 업데이트
-    if reward != 0:
-        # 보상에 따라 손실(loss) 계산 및 학습
-        logits = _model(_input_ids).logits  # 입력에 대한 모델의 출력을 가져옴
-        shift_logits = logits[:, :-1, :].contiguous()  # 출력의 마지막 토큰을 제외하고 입력과 맞춤
-        labels = _output_ids[:, 1:].contiguous()  # 모델 출력에서 첫 번째 토큰을 제외한 나머지를 레이블로 사용
-        labels = labels[:, :shift_logits.size(1)]  # 출력의 길이와 레이블 길이를 맞춤
+@cl.on_message
+async def main(user_input):
+    global chat_history, model, tokenizer, device, sentiment_analyzer
+    user_text = user_input.content
 
-        loss = _criterion(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-        if reward > 0:
-            loss = reward * loss  # 긍정적인 보상일 때 손실을 증가시켜 학습을 강화
-        elif reward < 0:
-            loss = loss / abs(reward)  # 부정적인 보상일 때 손실을 약화시켜 학습을 조절
+    # 감정 레이블 결정
+    label = await determine_label(user_text, sentiment_model=sentiment_analyzer)
 
-        # 손실을 역전파하고 옵티마이저로 파라미터 업데이트
-        loss.backward()
-        _optimizer.step()
-        _optimizer.zero_grad()
-
-        # 손실 로그에 추가
-        losses.append(loss.item())
-
-        print(f"모델이 {reward}의 보상을 반영하여 학습되었습니다.")
-        # 업데이트된 모델 저장
-        torch.save(_model.state_dict(), "updated_model.pth")
-
-# 챗봇 대화 종료 후 손실 시각화
-def plot_losses():
-    plt.plot(losses)
-    plt.xlabel('Training Step')
-    plt.ylabel('Loss')
-    plt.title('RLHF Training Loss Log')
-    plt.show()
-
-# 손실 로그 기록용 배열
-losses = []
-
-# 감정 분석 파이프라인 생성
-sentiment_analyzer = pipeline("sentiment-analysis", model="nlp04/korean_sentiment_analysis_kcelectra")
-
-# 모델을 GPU 또는 CPU에 올려서 연산 속도를 향상시킵니다.
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# 파인튜닝된 모델 로드
-# 저장된 모델과 토크나이저를 로드합니다.
-tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-model = AutoModelForCausalLM.from_pretrained(MODEL_DIR)
-
-# 모델 학습 시 필요한 토큰 설정 추가
-if tokenizer.pad_token is None or tokenizer.eos_token is None:
-    tokenizer.add_special_tokens({'pad_token': PAD_TOKEN, 'eos_token': END_TOKEN})
-    model.resize_token_embeddings(len(tokenizer))
-
-# 업데이트된 모델 파라미터를 저장하여 일관성 유지
-if not os.path.exists("updated_model.pth"):
-    torch.save(model.state_dict(), "updated_model.pth")
-# 이전에 저장된 모델 파라미터가 있는 경우 로드
-else:
-    model.load_state_dict(torch.load("updated_model.pth", weights_only=True))
-    print("이전 학습 내용을 로드했습니다.")
-
-# 모델을 GPU로 이동
-model.to(device)
-
-# 옵티마이저 설정 (RLHF 학습에 사용)
-optimizer = torch.optim.AdamW(model.parameters(), lr=1e-5)
-criterion = CrossEntropyLoss()
-
-# 챗봇 대화 루프
-# 사용자의 입력을 받아 모델이 응답을 생성합니다.
-model.eval()
-print("챗봇이 준비되었습니다. 종료하려면 '종료' 또는 'exit'를 입력하세요.")
-while True:
-    user_input = input("사용자: ")
-    if user_input.lower() in ["종료", "exit"]:
-        print("챗봇을 종료합니다.")
-        break
-
-    label = determine_label(user_input)
-    input_text = f"{START_TOKEN}레이블: {label}\n질문: {user_input}\n답변:"
+    # 입력 텍스트 생성
+    input_text = f"{START_TOKEN}레이블: {label}\n질문: {user_input.content}\n답변:"
     input_ids = tokenizer.encode(input_text, return_tensors='pt').to(device)
     output_ids = model.generate(
         input_ids,
@@ -184,11 +259,79 @@ while True:
         eos_token_id=tokenizer.eos_token_id,
     )
 
-    generated_answer = refine_response(input_ids, output_ids, tokenizer)
-    print(f"챗봇: {generated_answer}")
+    generated_answer = refine_response(input_ids, output_ids, tokenizer_instance=tokenizer)
 
-    # 사용자 피드백 수집 및 보상 반영
-    collect_feedback_and_apply_reward(input_ids, output_ids, model, optimizer, criterion)
+    # 사용자에게 메시지 전송
+    message = await cl.Message(content=generated_answer).send()
 
-# 대화 종료 후 손실 시각화
-plot_losses()
+    # 사용자로부터 피드백 수집
+    chat_info = {
+        "message_id": message.id,
+        "parent_id": message.parent_id,
+        "thread_id": user_input.thread_id,
+        "user_text": user_text,
+        "generated_answer":generated_answer,
+        "input_text": input_text,
+        "output_text": generated_answer
+    }
+
+    # 기존 채팅 기록 로드 또는 초기화
+    if os.path.exists(f"{RESULTS_DIR}/results.json",):
+        with open(f"{RESULTS_DIR}/results.json", "r", encoding="utf-8") as file:
+            try:
+                chat_history = json.load(file)
+            except json.JSONDecodeError:
+                chat_history = []
+    else:
+        chat_history = []
+
+    # 새로운 대화 정보를 채팅 기록에 추가
+    chat_history.append(chat_info)
+
+    # 채팅 기록을 JSON 파일로 저장
+    with open(f"{RESULTS_DIR}/results.json", "w", encoding="utf-8") as file:
+        json.dump(chat_history, file, ensure_ascii=False, indent=4)
+
+
+
+
+if __name__ == "__main__":
+
+    # 감정 분석 파이프라인 생성
+    sentiment_analyzer = pipeline("sentiment-analysis", model="nlp04/korean_sentiment_analysis_kcelectra")
+
+    # 모델을 올릴 device 설정. GPU 또는 CPU 사용. 연산 속도를 향상시킵니다.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 파인튜닝된 모델 로드
+    # 저장된 모델과 토크나이저를 로드합니다.
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_DIR)
+
+    # 모델 학습 시 필요한 토큰 설정 추가
+    if tokenizer.pad_token is None or tokenizer.eos_token is None:
+        tokenizer.add_special_tokens({'pad_token': PAD_TOKEN, 'eos_token': END_TOKEN})
+        model.resize_token_embeddings(len(tokenizer))
+
+    # 모델을 GPU/CPU로 이동
+    model.to(device)
+
+    # 옵티마이저 설정 (RLHF 학습에 사용)
+    learning_rate = 1e-5
+    weight_decay = 1e-5  # 가중치 감쇠를 위한 하이퍼파라미터 설정 (정규화 기법 적용)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+
+    # 손실 함수 정의
+    criterion = CrossEntropyLoss(reduction='none')  # 개별 샘플의 손실을 계산하기 위해 'none'으로 설정
+
+    # 업데이트된 모델과 옵티마이저 상태 로드 또는 저장
+    if os.path.exists("updated_model.pth"):
+        checkpoint = torch.load("updated_model.pth", weights_only=False)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    else:
+        # 초기 모델과 옵티마이저 상태 저장
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+        }, "updated_model.pth")

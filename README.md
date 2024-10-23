@@ -38,16 +38,13 @@ python 버전 3.12
 4. **챗봇 실행 (chat)**
 
    ```sh
-   python chatbot.py
+   chainlit run chatbot.py -w --port 원하는_포트번호
+   ```
+4. **수집된 피드백 학습 (RLHF)**
+
+   ```sh
+   python train_model_with_feedback.py
    ```
 ## 실행예시
 
-   ```
-   챗봇이 준비되었습니다. 종료하려면 '종료' 또는 'exit'를 입력하세요.
-   사용자: 오늘 몸이 아파
-   챗봇: 감기 조심하세요. 어서 주무세요! 기운 내길 바랍니다. 응원합니다~~~
-   사용자:  초코송이 좋아해?
-   챗봇: 맛있게 먹으면 영칼로리!!!!!!!
-   사용자: 종료
-   챗봇을 종료합니다.
-   ```
+ ![img.png](example/exampleRun.png)

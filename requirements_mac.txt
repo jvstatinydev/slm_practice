@@ -8,6 +8,7 @@ anyio==4.6.0
 attrs==24.2.0
 blinker==1.8.2
 certifi==2024.8.30
+chainlit
 charset-normalizer==3.3.2
 click==8.1.7
 colorlog==6.8.2
