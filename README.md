@@ -38,7 +38,12 @@ python 버전 3.12
 4. **챗봇 실행 (chat)**
 
    ```sh
-   python chatbot.py
+   chainlit run chatbot.py -w --port 원하는_포트번호
+   ```
+4. **수집된 피드백 학습 (RLHF)**
+
+   ```sh
+   python train_model_with_feedback.py
    ```
 ## 실행예시
 

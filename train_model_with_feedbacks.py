@@ -22,7 +22,7 @@ def pad_tensor(tensor, length, pad_token_id):
 
 # 피드백 수집 및 보상 반영 함수 - RLHF 학습
 def apply_rewards_by_user_feedback(chat_history_data, model_instance, optimizer_instance, loss_function, device_type,
-                                   max_epochs=10, patience=2):
+                                   max_epochs=5, patience=2):
     if len(chat_history_data) == 0:  # 피드백이 없는 경우
         print("피드백이 없어 RLHF 학습을 진행할 수 없습니다.")
         return []
