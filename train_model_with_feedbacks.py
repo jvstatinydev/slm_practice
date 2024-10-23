@@ -2,23 +2,11 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from torch.nn import CrossEntropyLoss
-from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, START_TOKEN, RESULTS_DIR
+from torch.nn.utils.rnn import pad_sequence
+from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, RESULTS_DIR
 import os
 import matplotlib.pyplot as plt
-import chainlit as cl
-import chainlit.data as cl_data
-from chainlit.user import PersistedUser, User
-from chainlit.element import Element, ElementDict
-from chainlit.step import StepDict
-from chainlit.types import (
-    Feedback,
-    PaginatedResponse,
-    Pagination,
-    ThreadDict,
-    ThreadFilter,
-)
 import json
-from typing import Optional, Dict, List
 
 # RLHF 보상 함수
 def set_reward(user_feedback):
@@ -29,62 +17,99 @@ def set_reward(user_feedback):
     else:
         return 0  # 중립 피드백
 
+def pad_tensor(tensor, length, pad_token_id):
+    return torch.cat([tensor, torch.full((length - tensor.size(0),), pad_token_id, dtype=tensor.dtype, device=tensor.device)])
+
 # 피드백 수집 및 보상 반영 함수 - RLHF 학습
-def apply_rewards_by_user_feedback(chat_history_data, model_instance, optimizer_instance, loss_function, device_type, max_epochs=10, patience=2):
+def apply_rewards_by_user_feedback(chat_history_data, model_instance, optimizer_instance, loss_function, device_type,
+                                   max_epochs=10, patience=2):
     if len(chat_history_data) == 0:  # 피드백이 없는 경우
         print("피드백이 없어 RLHF 학습을 진행할 수 없습니다.")
         return []
 
-    # 조기 종료를 위한 변수 초기화
-    best_loss = float('inf')
-    counter = 0  # 성능 향상이 없는 에포크 수를 세는 카운터
     losses_list = []
+    best_loss = float('inf')  # 최적의 손실 값을 무한대로 초기화
+    counter = 0  # 개선되지 않는 에포크 수를 세기 위한 카운터
 
+    # 모델을 학습 모드로 설정
+    model_instance.train()
     for epoch in range(max_epochs):
-        batch_input_ids = []
-        batch_output_ids = []
+        combined_ids_list = []
+        labels_list = []
         batch_rewards = []
 
-        for entry in chat_history_data:
-            input_ids = entry["input_ids"]
-            output_ids = entry["output_ids"]
-            user_feedback = entry["user_feedback"]
-            reward = set_reward(user_feedback)
+        for i, entry in enumerate(chat_history_data):
 
-            # 보상 스케일링 방식 개선: 보상을 -1에서 1 사이로 클리핑
-            reward = max(min(reward, 1), -1)
+            if not entry.get("feedback", False):
+                continue
+            if entry["feedback"].get("rewarded", False):
+                continue
+            reward = set_reward(entry["feedback"]['score'])
 
             if reward != 0:
-                batch_input_ids.append(input_ids)
-                batch_output_ids.append(output_ids)
+                input_text = entry["input_text"]
+                output_text = entry["output_text"]
+
+                # 입력과 출력을 연결
+                combined_text = input_text + output_text
+                combined_ids = tokenizer.encode(combined_text, return_tensors='pt').squeeze(0)
+
+                # 레이블 생성
+                labels = combined_ids.clone()
+                labels[:-1] = combined_ids[1:]
+                labels[-1] = tokenizer.pad_token_id
+
+                combined_ids_list.append(combined_ids)
+                labels_list.append(labels)
                 batch_rewards.append(reward)
 
         if batch_rewards:
-            batch_input_ids = torch.stack(batch_input_ids).to(device_type)
-            batch_output_ids = torch.stack(batch_output_ids).to(device_type)
-            batch_rewards = torch.tensor(batch_rewards, dtype=torch.float32).to(device_type)
+            # 패딩 적용
+            combined_ids_padded = pad_sequence(combined_ids_list, batch_first=True,
+                                               padding_value=tokenizer.pad_token_id).to(device_type)
+            labels_padded = pad_sequence(labels_list, batch_first=True, padding_value=tokenizer.pad_token_id).to(
+                device_type)
+            batch_rewards_tensor = torch.tensor(batch_rewards, dtype=torch.float32).to(device_type)
+
+            # 어텐션 마스크 생성
+            attention_mask = (combined_ids_padded != tokenizer.pad_token_id).long().to(device_type)
 
             # 모델 출력 계산
-            logits = model_instance(batch_input_ids).logits
+            outputs = model_instance(combined_ids_padded, attention_mask=attention_mask)
+            logits = outputs.logits
+
+            # 시프트하여 맞춰줌
             shift_logits = logits[:, :-1, :].contiguous()
-            labels = batch_output_ids[:, 1:].contiguous()
-            labels = labels[:, :shift_logits.size(1)]
+            shift_labels = labels_padded[:, 1:].contiguous()
 
-            # 개별 샘플의 손실 계산
-            loss = loss_function(shift_logits.view(-1, shift_logits.size(-1)), labels.view(-1))
-            loss = loss.view(batch_input_ids.size(0), -1).mean(dim=1)
+            # 손실 계산
+            loss = loss_function(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+            loss = loss.view(combined_ids_padded.size(0), -1).mean(dim=1)
 
-            # 보상에 따라 손실 조정
-            adjusted_loss = loss * (-batch_rewards)  # 보상이 높을수록 손실이 감소하도록 설정
+            # 보상 마스크 생성
+            positive_mask = (batch_rewards_tensor > 0).float()
+
+            # 보상이 양수인 샘플의 손실
+            positive_loss = (loss * positive_mask).sum() / positive_mask.sum()
 
             # 총 손실 계산
-            total_loss = adjusted_loss.mean()
+            total_loss = positive_loss
 
-            # 조기 종료 조건 확인
-            if total_loss < best_loss:
+            # 옵티마이저 업데이트
+            optimizer_instance.zero_grad()
+            total_loss.backward()
+            optimizer_instance.step()
+
+            # 손실 로그에 추가
+            losses_list.append(total_loss.item())
+
+            print(f"에포크 {epoch + 1}: 총 손실: {total_loss.item()}")
+
+            # 조기 종료 체크
+            if total_loss < best_loss - 1e-4:  # 손실이 개선되었을 경우 (min_delta = 1e-4)
                 best_loss = total_loss
-                counter = 0
-                # 모델과 옵티마이저의 현재 상태 저장
+                counter = 0  # 카운터 초기화
+                # 최적의 모델 상태 저장
                 torch.save({
                     'model_state_dict': model_instance.state_dict(),
                     'optimizer_state_dict': optimizer_instance.state_dict(),
@@ -93,20 +118,11 @@ def apply_rewards_by_user_feedback(chat_history_data, model_instance, optimizer_
                 counter += 1
                 if counter >= patience:
                     print("조기 종료 조건에 따라 학습을 종료합니다.")
-                    # 최적의 모델과 옵티마이저 상태 로드
+                    # 최적의 모델 상태 로드
                     checkpoint = torch.load("best_model.pth", weights_only=False)
                     model_instance.load_state_dict(checkpoint['model_state_dict'])
                     optimizer_instance.load_state_dict(checkpoint['optimizer_state_dict'])
                     break
-
-            # 역전파 및 파라미터 업데이트
-            optimizer_instance.zero_grad()
-            total_loss.backward()
-            optimizer_instance.step()
-
-            # 손실 로그에 추가
-            losses_list.append(total_loss.item())
-            print(f"에포크 {epoch + 1}: 모델이 {len(batch_rewards)}개의 보상을 반영하여 학습되었습니다. 총 손실: {total_loss.item()}")
 
         else:
             print("유효한 피드백이 없어 학습을 건너뜁니다.")
@@ -117,6 +133,14 @@ def apply_rewards_by_user_feedback(chat_history_data, model_instance, optimizer_
         'model_state_dict': model_instance.state_dict(),
         'optimizer_state_dict': optimizer_instance.state_dict(),
     }, "updated_model.pth")
+
+    # 모든 피드백 리워드 여부를 변경해줌
+    for i, entry in enumerate(chat_history_data):
+        if entry.get("feedback", False):
+            chat_history_data[i]["feedback"]["rewarded"] = True
+    # chat_history_data를 json 파일로 다시 덮어씀
+    with open(f"{RESULTS_DIR}/results.json", "w", encoding="utf-8") as file:
+        json.dump(chat_history_data, file, ensure_ascii=False, indent=4)
 
     return losses_list  # 손실 로그 반환
 

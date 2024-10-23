@@ -6,7 +6,6 @@ from transformers import AutoTokenizer, AutoModelForCausalLM, pipeline
 from torch.nn import CrossEntropyLoss
 from config import END_TOKEN, MODEL_DIR, PAD_TOKEN, START_TOKEN, RESULTS_DIR
 import os
-import matplotlib.pyplot as plt
 import chainlit as cl
 import chainlit.data as cl_data
 from chainlit.user import PersistedUser, User
@@ -123,13 +122,12 @@ cl_data._data_layer = CustomDataLayer()
 
 
 # 자동 레이블 결정 함수
-def determine_label(user_input, sentiment_model):
+async def determine_label(user_input, sentiment_model):
     # 입력된 질문을 감정 분석하여 레이블을 결정합니다
     sentiment = sentiment_model(user_input)[0]
 
     # 감정 분석 결과 출력
-    print(f"감정: {sentiment['label']}, 점수: {sentiment['score']:.2f}")
-
+    await cl.Message(content=f"SYSTEM: 감정: {sentiment['label']}, 점수: {sentiment['score']:.2f}").send()
     # 감정 레이블에서 idx 추출
     id2label = sentiment_model.model.config.id2label
     label_key = None
@@ -225,7 +223,7 @@ async def main(user_input):
     user_text = user_input.content
 
     # 감정 레이블 결정
-    label = determine_label(user_text, sentiment_model=sentiment_analyzer)
+    label = await determine_label(user_text, sentiment_model=sentiment_analyzer)
 
     # 입력 텍스트 생성
     input_text = f"{START_TOKEN}레이블: {label}\n질문: {user_input.content}\n답변:"
@@ -271,8 +269,10 @@ async def main(user_input):
         "message_id": message.id,
         "parent_id": message.parent_id,
         "thread_id": user_input.thread_id,
-        "user_text": user_text, "generated_answer":generated_answer,
-        "input_ids": input_ids.cpu().tolist(), "output_ids": output_ids.cpu().tolist()
+        "user_text": user_text,
+        "generated_answer":generated_answer,
+        "input_text": input_text,
+        "output_text": generated_answer
     }
 
     # 기존 채팅 기록 로드 또는 초기화
