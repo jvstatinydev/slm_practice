@@ -150,11 +150,16 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
     # 모델 학습
     trainer.train()
 
+    """파인튜닝된 모델과 토크나이저를 저장합니다."""
+    trainer.save_model(MODEL_DIR)
+    tokenizer.save_pretrained(MODEL_DIR)
+
     # 검증 손실 계산
     eval_result = trainer.evaluate()
     validation_loss = eval_result['eval_loss']
 
     return validation_loss
+
 
 def main():
     # JSON 파일에서 하이퍼파라미터 로드
