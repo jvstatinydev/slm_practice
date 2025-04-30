@@ -1,11 +1,11 @@
-# 기본 챗봇 연습 예제
+# 기본 챗봇 연습 예제22212
 
 - 챗봇 훈련 데이터: [https://github.com/songys/Chatbot_data](https://github.com/songys/Chatbot_data)
 - 한국어 언어 모델: [https://github.com/SKT-AI/KoGPT2](https://github.com/SKT-AI/KoGPT2)
 
 ## 준비
 python 버전 3.12
-
+234245
 필요 패키지 설치
 - Mac
    ```
