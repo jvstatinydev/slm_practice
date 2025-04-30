@@ -1,12 +1,12 @@
 # 기본 챗봇 연습 예제
 
-- 챗봇 훈련 데이터: [https://github.com/songys/Chatbot_data](https://github.com/songys/Chatbot_data)
+- 챗봇 훈련 데이터: [https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=543](https://github.com/songys/Chatbot_data)
 - 한국어 언어 모델: [https://github.com/SKT-AI/KoGPT2](https://github.com/SKT-AI/KoGPT2)
 
 ## 준비
 python 버전 3.12
 
-필요 패키지 설치
+필요 패키지 설치 - requirements for mac are not updated yet!!
 - Mac
    ```
    pip install -r requirements_mac.txt
@@ -15,6 +15,12 @@ python 버전 3.12
    ```
    pip install -r requirements_windows.txt
    ```
+
+챗봇 훈련 데이터를 아래 경로에 다운로드
+   ```
+   {프로젝트경로}/data
+   ```
+다운로드 되면, training, validation 데이터 경로가 올바른지 config.py 파일내 경로들과 대조하여 확인.
 
 ## 사용방법
 
