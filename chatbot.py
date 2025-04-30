@@ -221,12 +221,33 @@ async def start():
 async def main(user_input):
     global chat_history, model, tokenizer, device, sentiment_analyzer
     user_text = user_input.content
+    thread_id = user_input.thread_id
+
+    # 이전 대화 기록 로드
+    chat_history = []
+    history_file = f"{RESULTS_DIR}/results.json"
+    if os.path.exists(history_file):
+        with open(history_file, "r", encoding="utf-8") as f:
+            try:
+                all_history = json.load(f)
+                # 현재 스레드의 대화 기록만 필터링
+                for item in all_history:
+                    if 'thread_id' in item and item['thread_id'] == thread_id:
+                        chat_history.append(item)
+            except json.JSONDecodeError:
+                chat_history = []
+
+    # 이전 대화 내용을 바탕으로 입력 텍스트 구성
+    context = START_TOKEN
+    for item in chat_history:
+        if 'user_text' in item and 'generated_answer' in item:
+            context += f"질문: {item['user_text']}\n답변: {item['generated_answer']}\n"
 
     # 감정 레이블 결정
     label = await determine_label(user_text, sentiment_model=sentiment_analyzer)
 
     # 입력 텍스트 생성
-    input_text = f"{START_TOKEN}레이블: {label}\n질문: {user_input.content}\n답변:"
+    input_text = f"{context}레이블: {label}\n질문: {user_input.content}\n답변:"
     input_ids = tokenizer.encode(input_text, return_tensors='pt').to(device)
     output_ids = model.generate(
         input_ids,
@@ -264,7 +285,7 @@ async def main(user_input):
     # 사용자에게 메시지 전송
     message = await cl.Message(content=generated_answer).send()
 
-    # 사용자로부터 피드백 수집
+    # 현재 대화 내용을 채팅 기록에 추가 (feedback 정보는 없을 수 있음)
     chat_info = {
         "message_id": message.id,
         "parent_id": message.parent_id,
@@ -275,24 +296,17 @@ async def main(user_input):
         "output_text": generated_answer
     }
 
-    # 기존 채팅 기록 로드 또는 초기화
-    if os.path.exists(f"{RESULTS_DIR}/results.json",):
-        with open(f"{RESULTS_DIR}/results.json", "r", encoding="utf-8") as file:
+    # 업데이트된 채팅 기록 저장
+    all_history = []
+    if os.path.exists(history_file):
+        with open(history_file, "r", encoding="utf-8") as f:
             try:
-                chat_history = json.load(file)
+                all_history = json.load(f)
             except json.JSONDecodeError:
-                chat_history = []
-    else:
-        chat_history = []
-
-    # 새로운 대화 정보를 채팅 기록에 추가
-    chat_history.append(chat_info)
-
-    # 채팅 기록을 JSON 파일로 저장
-    with open(f"{RESULTS_DIR}/results.json", "w", encoding="utf-8") as file:
-        json.dump(chat_history, file, ensure_ascii=False, indent=4)
-
-
+                pass
+    all_history.append(chat_info)
+    with open(history_file, "w", encoding="utf-8") as f:
+        json.dump(all_history, f, ensure_ascii=False, indent=4)
 
 
 if __name__ == "__main__":

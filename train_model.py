@@ -4,12 +4,14 @@
 import json
 import os
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from transformers import TextDataset, DataCollatorForLanguageModeling
+from transformers import DataCollatorForLanguageModeling
 from transformers import Trainer, TrainingArguments, TrainerCallback
 import optuna
-from config import MODEL_DIR, RESULTS_DIR, TRAIN_TXT, END_TOKEN, START_TOKEN, TRAIN_PARAMETER_JSON, DEFAULT_TRAIN_PARAMETER_JSON
+from datasets import load_dataset
+from config import VALID_TXT, MODEL_DIR, RESULTS_DIR, TRAIN_TXT
+from config import PAD_TOKEN, END_TOKEN, START_TOKEN
+from config import TRAIN_PARAMETER_JSON, DEFAULT_TRAIN_PARAMETER_JSON
 import torch
-from torch.utils.data import random_split
 
 class OptunaCallback(TrainerCallback):
     def __init__(self, trial):
@@ -31,20 +33,25 @@ def load_tokenizer_and_model():
     new_tokens = [START_TOKEN, END_TOKEN]
     tokenizer.add_tokens(new_tokens)
     model.resize_token_embeddings(len(tokenizer))
+    if tokenizer.pad_token is None:
+        tokenizer.add_special_tokens({'pad_token': PAD_TOKEN})
+        model.resize_token_embeddings(len(tokenizer))
     return tokenizer, model
 
-def load_dataset(file_path, tokenizer, block_size):
-    """데이터셋을 불러오고 토큰화합니다."""
-    return TextDataset(
-        tokenizer=tokenizer,
-        file_path=file_path,
-        block_size=block_size
+def load_dataset_hf(file_path, tokenizer):
+    dataset = load_dataset('text', data_files=file_path)
+    tokenized_dataset = dataset.map(
+        lambda examples: tokenizer(examples['text'], truncation=True),
+        batched=True
     )
+    return tokenized_dataset['train']
 
-def get_data_collator(tokenizer):
-    """언어 모델링을 위한 데이터 콜레이터를 가져옵니다."""
+def get_data_collator(tokenizer, block_size):
+    """언어 모델링을 위한 데이터 콜레이터를 가져오고 패딩을 적용합니다."""
     return DataCollatorForLanguageModeling(
-        tokenizer=tokenizer, mlm=False,
+        tokenizer=tokenizer,
+        mlm=False,
+        pad_to_multiple_of=block_size
     )
 
 def load_hyperparameters(file_path):
@@ -64,24 +71,15 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
 
     """하이퍼파라미터를 인자로 받아 모델을 학습하고 검증 손실을 반환합니다."""
     tokenizer, model = load_tokenizer_and_model()
-    dataset = load_dataset(TRAIN_TXT, tokenizer, block_size)
-    data_collator = get_data_collator(tokenizer)
+    train_dataset = load_dataset_hf(TRAIN_TXT, tokenizer)
+    eval_dataset = None
+    data_collator = get_data_collator(tokenizer, block_size)
 
-    # 데이터셋을 학습 및 검증 데이터로 분할
-    # 튜닝 시에만 데이터셋의 일부를 샘플링 (trial이 있을 때)
-    if trial is not None:
-        print("Optuna 튜닝 중: 데이터셋 5% 샘플링")
-        subset_size = int(len(dataset) * 0.05)  # 데이터의 5%만 사용
-        valid_length = int(subset_size * 0.1)  # 그 중 10%를 검증 데이터로 사용
-        train_length = subset_size - valid_length
-        # 전체 데이터셋에서 10%만 샘플링하여 train/valid로 나누기
-        subset_dataset, _ = random_split(dataset, [subset_size, len(dataset) - subset_size])
-        train_dataset, valid_dataset = random_split(subset_dataset, [train_length, valid_length])
+    if os.path.exists(VALID_TXT):
+        eval_dataset = load_dataset_hf(VALID_TXT, tokenizer)
+        print(f"검증 데이터셋 로드 완료: {VALID_TXT}")
     else:
-        print("전체 데이터 사용 중: 실제 학습")
-        valid_length = int(len(dataset) * 0.1)  # 전체 데이터셋 기준 10% 검증 데이터
-        train_length = len(dataset) - valid_length
-        train_dataset, valid_dataset = random_split(dataset, [train_length, valid_length])
+        print("검증 데이터셋 파일이 없습니다.")
 
     # 학습 인자 설정
     training_args = TrainingArguments(
@@ -97,11 +95,15 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         # 각 디바이스(GPU 등)당 배치 크기, 한 번에 처리할 데이터 샘플 수
         per_device_train_batch_size=batch_size,
 
+        dataloader_num_workers=os.cpu_count() // 2, # 사용 가능한 코어 수의 절반
+
         # 그래디언트를 누적할 스텝 수, 메모리 절약을 위해 사용
         gradient_accumulation_steps=1,
 
         # 학습률, 모델이 학습할 때 가중치를 업데이트하는 속도
         learning_rate=learning_rate,
+
+        lr_scheduler_type='cosine',
 
         # 모델을 저장할 스텝 간격, n 스텝마다 모델을 저장
         save_steps=500,
@@ -110,22 +112,22 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         save_total_limit=2,
 
         # 평가 전략, 'steps'로 설정하여 일정 스텝마다 평가
-        eval_strategy='steps',
+        eval_strategy='steps' if eval_dataset else 'no',
 
         # 평가 스텝 간격, n 스텝마다 평가
-        eval_steps=500,
+        eval_steps=500 if eval_dataset else None,
 
         # 로그 출력 스텝 간격, n 스텝마다 로그 출력
         logging_steps=500,
 
         # 학습 종료 시 가장 좋은 모델을 로드할지 여부
-        load_best_model_at_end=True,
+        load_best_model_at_end=True if eval_dataset else False,
 
         # 가장 좋은 모델을 결정할 평가 메트릭, 'eval_loss'로 설정
-        metric_for_best_model='eval_loss',
+        metric_for_best_model='eval_loss' if eval_dataset else None,
 
         # 평가 메트릭이 낮을수록 좋은지 여부, False로 설정
-        greater_is_better=False,
+        greater_is_better=False if eval_dataset else None,
 
         # 혼합 정밀도(16-bit floating point) 학습 사용 여부, GPU가 지원하면 True로 설정
         fp16=torch.cuda.is_available(),
@@ -140,7 +142,7 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         args=training_args,
         data_collator=data_collator,
         train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
+        eval_dataset=eval_dataset,
     )
 
     # Optuna의 Pruner 사용
@@ -148,7 +150,7 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         trainer.add_callback(OptunaCallback(trial))
 
     # 모델 학습
-    trainer.train()
+    trainer.train(resume_from_checkpoint=True)
 
     """파인튜닝된 모델과 토크나이저를 저장합니다."""
     trainer.save_model(MODEL_DIR)

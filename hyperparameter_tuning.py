@@ -23,10 +23,10 @@ def get_optimal_n_trials():
 
 def objective(trial):
     # 최적화할 하이퍼파라미터 범위 설정
-    batch_size = trial.suggest_categorical('batch_size', [2, 4])
+    batch_size = trial.suggest_categorical('batch_size', [8, 16, 32, 64])
     num_train_epochs = trial.suggest_int('num_train_epochs', 3, 10)
-    learning_rate = trial.suggest_float('learning_rate', 1e-5, 5e-5, log=True)
-    block_size = trial.suggest_categorical('block_size', [64, 128])
+    learning_rate = trial.suggest_float('learning_rate', 1e-6, 1e-3, log=True)
+    block_size = trial.suggest_categorical('block_size', [64, 128, 256])
 
     # 학습 함수 호출 및 검증 손실 반환
     validation_loss = train_model_with_hyperparameters(
