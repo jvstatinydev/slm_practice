@@ -253,25 +253,27 @@ async def main(user_input):
         input_ids,
 
         # 모델이 생성할 새로운 토큰의 최대 개수
-        max_new_tokens=50,
+        max_new_tokens=150,
 
         # 최소 응답 길이 설정
-        min_length=20,
+        min_length=0,
 
         # 확률 분포를 기반으로 샘플링. False일 경우 가장 높은 확률의 토큰을 고정적으로 선택. True일 경우 다양하고 창의적인 응답을 생성.
         # True인 경우 temperature, top_p 값 설정 가능.
         do_sample=True,
 
         # 생성된 텍스트의 다양성을 조절하는 파라미터. 낮은 값은 더 결정적인 응답을 생성하며, 높은 값은 더 창의적이거나 예측 불가능한 응답
-        temperature=0.8,
+        temperature=0.85,
 
         # 확률 축적 방법을 사용해 생성할 토큰을 결정하는 top-p 샘플링. 다양성을 유지하면서 비정상적인 토큰이 선택되는 것을 방지.
         # 낮은 top_p 값은 모델이 더 결정적이고 예측 가능한 응답을 생성하게 합니다.
         # 높은 top_p 값은 모델이 더 창의적이고 다양성 있는 응답을 생성하게 합니다.
-        top_p=0.85,
+        top_p=0.9,
+
+        top_k=25,
 
         # 반복되는 단어에 대해 페널티를 부여해 응답의 품질을 높임. 1을 기준으로 높은 값은 반복을 피하고 낮은 값은 반복을 허용.
-        repetition_penalty=1.5,
+        repetition_penalty=1.2,
 
         # 입력의 길이를 맞추기 위해 사용
         pad_token_id=tokenizer.pad_token_id,
