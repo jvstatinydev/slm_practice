@@ -1,6 +1,6 @@
 # 기본 챗봇 연습 예제
 
-- 챗봇 훈련 데이터: [https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=543](https://github.com/songys/Chatbot_data)
+- 챗봇 훈련 데이터: [https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=543](https://aihub.or.kr/aihubdata/data/view.do?currMenu=115&topMenu=100&dataSetSn=543)
 - 한국어 언어 모델: [https://github.com/SKT-AI/KoGPT2](https://github.com/SKT-AI/KoGPT2)
 
 ## 준비
