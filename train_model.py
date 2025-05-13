@@ -12,6 +12,7 @@ from config import VALID_TXT, MODEL_DIR, RESULTS_DIR, TRAIN_TXT
 from config import PAD_TOKEN, END_TOKEN, START_TOKEN
 from config import TRAIN_PARAMETER_JSON, DEFAULT_TRAIN_PARAMETER_JSON
 import torch
+import numpy as np
 
 class OptunaCallback(TrainerCallback):
     def __init__(self, trial):
@@ -27,16 +28,25 @@ class OptunaCallback(TrainerCallback):
             raise optuna.TrialPruned()
 
 def load_tokenizer_and_model():
-    """토크나이저와 모델을 불러오고, 커스텀 토큰을 추가합니다."""
     tokenizer = AutoTokenizer.from_pretrained("skt/kogpt2-base-v2")
     model = AutoModelForCausalLM.from_pretrained("skt/kogpt2-base-v2")
-    new_tokens = [START_TOKEN, END_TOKEN]
-    tokenizer.add_tokens(new_tokens)
-    model.resize_token_embeddings(len(tokenizer))
+
+    added_tokens = 0
+    if START_TOKEN not in tokenizer.get_vocab():
+        tokenizer.add_tokens([START_TOKEN])
+        added_tokens += 1
+    if END_TOKEN not in tokenizer.get_vocab():
+        tokenizer.add_tokens([END_TOKEN])
+        added_tokens += 1
     if tokenizer.pad_token is None:
         tokenizer.add_special_tokens({'pad_token': PAD_TOKEN})
+        added_tokens += 1
+
+    if added_tokens > 0:
         model.resize_token_embeddings(len(tokenizer))
+
     return tokenizer, model
+
 
 def load_dataset_hf(file_path, tokenizer):
     dataset = load_dataset('text', data_files=file_path)
@@ -98,7 +108,7 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         dataloader_num_workers=os.cpu_count() // 2, # 사용 가능한 코어 수의 절반
 
         # 그래디언트를 누적할 스텝 수, 메모리 절약을 위해 사용
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=8,
 
         # 학습률, 모델이 학습할 때 가중치를 업데이트하는 속도
         learning_rate=learning_rate,
@@ -106,7 +116,7 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         lr_scheduler_type='cosine',
 
         # 모델을 저장할 스텝 간격, n 스텝마다 모델을 저장
-        save_steps=500,
+        save_steps=4000,
 
         # 저장할 모델의 최대 개수, 최신 n개의 모델만 저장
         save_total_limit=2,
@@ -115,10 +125,10 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
         eval_strategy='steps' if eval_dataset else 'no',
 
         # 평가 스텝 간격, n 스텝마다 평가
-        eval_steps=500 if eval_dataset else None,
+        eval_steps=2000 if eval_dataset else None,
 
         # 로그 출력 스텝 간격, n 스텝마다 로그 출력
-        logging_steps=500,
+        logging_steps=1000,
 
         # 학습 종료 시 가장 좋은 모델을 로드할지 여부
         load_best_model_at_end=True if eval_dataset else False,
@@ -164,6 +174,7 @@ def train_model_with_hyperparameters(batch_size, num_train_epochs, learning_rate
 
 
 def main():
+
     # JSON 파일에서 하이퍼파라미터 로드
     best_hyperparameters = load_hyperparameters(TRAIN_PARAMETER_JSON)
 
